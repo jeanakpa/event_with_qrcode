@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full bg-gray-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion d'événement avec QR Code</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-full">
+    <div class="min-h-full">
+        <header class="bg-indigo-600 pb-24">
+            <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+                <h1 class="text-3xl font-bold tracking-tight text-white" style="text-align: center;padding: 15px;">My Event</h1>
+            </div>
+        </header>
+
+        <main class="-mt-24 pb-8">
+            <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+                <div class="grid grid-cols-1 gap-4">
+                    <section aria-labelledby="generate-qr" class="bg-white rounded-lg shadow">
+                        <div class="p-6">
+                            <h2 id="generate-qr" class="text-lg font-medium leading-6 text-gray-900 mb-4">Nom complet du participant</h2>
+                            <form action="/generer_qr" method="post" class="mt-2 flex">
+                                <input type="text" name="nom" placeholder="Entrez un nom" style="padding-left: 15px;" required class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                                <button type="submit" class="ml-4 flex-none rounded-md bg-indigo-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">Générer</button>
+                            </form>
+                        </div>
+                    </section>
+
+                    <section aria-labelledby="scan-qr" class="bg-white rounded-lg shadow">
+                        <div class="p-6">
+                            <h2 id="scan-qr" class="text-lg font-medium leading-6 text-gray-900 mb-4">Scanner un QR Code</h2>
+                            <div id="scanControls" class="mt-2 flex justify-center">
+                                <button id="startScan" class="rounded-md bg-indigo-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">Démarrer le scan par caméra</button>
+                                <button id="stopScan" style="display: none;" class="rounded-md bg-red-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500">Arrêter le scan</button>
+                            </div>
+                            <div id="reader" class="mt-4 mx-auto" style="display: none;"></div>
+                            <div id="resultat_scan" class="mt-4 text-center text-sm text-gray-500"></div>
+                        </div>
+                    </section>
+
+                    <section aria-labelledby="upload-qr" class="bg-white rounded-lg shadow">
+                        <div class="p-6">
+                            <h2 id="upload-qr" class="text-lg font-medium leading-6 text-gray-900 mb-4">Ou télécharger une image de QR Code</h2>
+                            <form action="/scanner_qr" method="post" enctype="multipart/form-data" class="mt-2">
+                                <div class="flex items-center justify-center w-full">
+                                    <label for="qr_image" class="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                                            <svg class="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                                            </svg>
+                                            <p class="mb-2 text-sm text-gray-500"><span class="font-semibold">Cliquez pour télécharger</span> ou glissez et déposez</p>
+                                            <p class="text-xs text-gray-500">PNG, JPG ou GIF</p>
+                                        </div>
+                                        <input id="qr_image" type="file" name="qr_image" accept="image/*" class="hidden" required />
+                                    </label>
+                                </div>
+                                <button type="submit" class="mt-4 w-full rounded-md bg-indigo-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">Scanner QR Code</button>
+                            </form>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="mt-4 text-center">
+                    <a href="/view_db" class="text-sm font-semibold leading-6 text-indigo-600 hover:text-indigo-500">Voir le contenu de la base de données</a>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const html5QrCode = new Html5Qrcode("reader");
+        const startScanButton = document.getElementById('startScan');
+        const stopScanButton = document.getElementById('stopScan');
+        const readerDiv = document.getElementById('reader');
+
+        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+            console.log(`Code scanné = ${decodedText}`, decodedResult);
+            document.getElementById('resultat_scan').textContent = 'Scan en cours...';
+            
+            fetch('/scanner_qr_camera', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({qr_data: decodedText})
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('resultat_scan').textContent = data;
+                stopScanning();
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                document.getElementById('resultat_scan').textContent = 'Erreur lors du scan';
+            });
+        };
+
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+        startScanButton.addEventListener('click', () => {
+            readerDiv.style.display = 'block';
+            startScanButton.style.display = 'none';
+            stopScanButton.style.display = 'inline-block';
+            html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback);
+        });
+
+        function stopScanning() {
+            if (html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => {
+                    readerDiv.style.display = 'none';
+                    startScanButton.style.display = 'inline-block';
+                    stopScanButton.style.display = 'none';
+                });
+            }
+        }
+
+        stopScanButton.addEventListener('click', stopScanning);
+
+        document.querySelector('form[action="/scanner_qr"]').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var formData = new FormData(this);
+            fetch('/scanner_qr', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('resultat_scan').textContent = data;
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+            });
+        });
+    </script>
+    <script src="script.js"></script>
+</body>
+</html>

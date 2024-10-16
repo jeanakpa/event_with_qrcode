@@ -1,0 +1,475 @@
+////////// CODE PYTHON app.py
+from flask import Flask, render_template, request, send_file, jsonify
+import qrcode
+from io import BytesIO
+from pyzbar.pyzbar import decode
+from PIL import Image
+import sqlite3
+import uuid
+import json
+
+app = Flask(__name__)
+
+def init_db():
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS qrcodes
+                 (id TEXT PRIMARY KEY, name TEXT, scanned BOOLEAN)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/generer_qr', methods=['POST'])
+def generer_qr():
+    nom = request.form['nom']
+    qr_id = str(uuid.uuid4())
+    
+    qr_data = json.dumps({"id": qr_id, "name": nom})
+    
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO qrcodes (id, name, scanned) VALUES (?, ?, ?)", (qr_id, nom, False))
+    conn.commit()
+    conn.close()
+    
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    img_io = BytesIO()
+    img.save(img_io, 'PNG')
+    img_io.seek(0)
+    return send_file(img_io, mimetype='image/png')
+
+@app.route('/scanner_qr_camera', methods=['POST'])
+def scanner_qr_camera():
+    data = request.json
+    qr_data = json.loads(data['qr_data'])
+    qr_id = qr_data["id"]
+    nom = qr_data["name"]
+    
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM qrcodes WHERE id = ?", (qr_id,))
+    qr_db_data = c.fetchone()
+    
+    if qr_db_data:
+        if not qr_db_data[2]:  # Si pas encore scanné
+            c.execute("UPDATE qrcodes SET scanned = TRUE WHERE id = ?", (qr_id,))
+            conn.commit()
+            conn.close()
+            return f"Code QR valide pour : {nom}. Première utilisation."
+        else:
+            conn.close()
+            return f"Ce code QR pour {nom} a déjà été scanné et ne peut plus être utilisé."
+    else:
+        conn.close()
+        return "Code QR non reconnu dans la base de données."
+
+@app.route('/scanner_qr', methods=['POST'])
+def scanner_qr():
+    if 'qr_image' not in request.files:
+        return "Aucune image n'a été téléchargée", 400
+    
+    qr_image = request.files['qr_image']
+    img = Image.open(qr_image)
+    resultat = decode(img)
+    
+    if resultat:
+        qr_data = json.loads(resultat[0].data.decode('utf-8'))
+        qr_id = qr_data["id"]
+        nom = qr_data["name"]
+        
+        conn = sqlite3.connect('qrcodes.db')
+        c = conn.cursor()
+        c.execute("SELECT * FROM qrcodes WHERE id = ?", (qr_id,))
+        qr_db_data = c.fetchone()
+        
+        if qr_db_data:
+            if not qr_db_data[2]:  # Si pas encore scanné
+                c.execute("UPDATE qrcodes SET scanned = TRUE WHERE id = ?", (qr_id,))
+                conn.commit()
+                conn.close()
+                return f"Code QR valide pour : {nom}. Première utilisation."
+            else:
+                conn.close()
+                return f"Ce code QR pour {nom} a déjà été scanné et ne peut plus être utilisé."
+        else:
+            conn.close()
+            return "Code QR non reconnu dans la base de données."
+    else:
+        return "Aucun code QR n'a été détecté dans l'image"
+
+@app.route('/view_db')
+def view_db():
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM qrcodes")
+    rows = c.fetchall()
+    conn.close()
+    
+    return render_template('view_db.html', rows=rows)
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
+
+
+
+
+ ////// CODE HTML index.html
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion d'événement avec QR Code</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+    <h1>Gestion d'événement avec QR Code</h1>
+    
+    <h2>Générer un QR Code</h2>
+    <form action="/generer_qr" method="post">
+        <input type="text" name="nom" placeholder="Entrez un nom" required>
+        <button type="submit">Générer QR Code</button>
+    </form>
+
+    <h2>Scanner un QR Code</h2>
+    <div id="reader"></div>
+    <div id="resultat_scan"></div>
+
+    <h2>Ou télécharger une image de QR Code</h2>
+    <form action="/scanner_qr" method="post" enctype="multipart/form-data">
+        <input type="file" name="qr_image" accept="image/*" required>
+        <button type="submit">Scanner QR Code</button>
+    </form>
+
+    <a href="/view_db">Voir le contenu de la base de données</a>
+
+    <script>
+        const html5QrCode = new Html5Qrcode("reader");
+        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+            console.log(`Code scanné = ${decodedText}`, decodedResult);
+            document.getElementById('resultat_scan').textContent = 'Scan en cours...';
+            
+            fetch('/scanner_qr_camera', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({qr_data: decodedText})
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('resultat_scan').textContent = data;
+                html5QrCode.stop();
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                document.getElementById('resultat_scan').textContent = 'Erreur lors du scan';
+            });
+        };
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+        html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback);
+
+        document.querySelector('form[action="/scanner_qr"]').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var formData = new FormData(this);
+            fetch('/scanner_qr', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('resultat_scan').textContent = data;
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+            });
+        });
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from flask import Flask, render_template, request, send_file, jsonify
+import qrcode
+from io import BytesIO
+from pyzbar.pyzbar import decode
+from PIL import Image
+import sqlite3
+import uuid
+import json
+
+app = Flask(__name__)
+
+
+
+def init_db():
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS qrcodes
+                 (id TEXT PRIMARY KEY, name TEXT, scanned BOOLEAN)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+
+@app.route('/generer_qr', methods=['POST'])
+def generer_qr():
+    nom = request.form['nom']
+    qr_id = str(uuid.uuid4())
+    
+    qr_data = json.dumps({"id": qr_id, "name": nom})
+    
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO qrcodes (id, name, scanned) VALUES (?, ?, ?)", (qr_id, nom, False))
+    conn.commit()
+    conn.close()
+    
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    img_io = BytesIO()
+    img.save(img_io, 'PNG')
+    img_io.seek(0)
+    return send_file(img_io, mimetype='image/png')
+
+
+
+
+@app.route('/scanner_qr', methods=['POST'])
+def scanner_qr():
+    if 'qr_image' not in request.files:
+        return "Aucune image n'a été téléchargée", 400
+    
+    qr_image = request.files['qr_image']
+    img = Image.open(qr_image)
+    resultat = decode(img)
+    
+    if resultat:
+        return process_qr_data(resultat[0].data.decode('utf-8'))
+    else:
+        return "Aucun code QR n'a été détecté dans l'image"
+
+
+
+
+@app.route('/scanner_qr_camera', methods=['POST'])
+def scanner_qr_camera():
+    data = request.json
+    return process_qr_data(data['qr_data'])
+
+def process_qr_data(qr_data):
+    try:
+        qr_info = json.loads(qr_data)
+        qr_id = qr_info["id"]
+        nom = qr_info["name"]
+        
+        conn = sqlite3.connect('qrcodes.db')
+        c = conn.cursor()
+        c.execute("SELECT * FROM qrcodes WHERE id = ?", (qr_id,))
+        qr_db_data = c.fetchone()
+        
+        if qr_db_data:
+            if not qr_db_data[2]:  # Si pas encore scanné
+                c.execute("UPDATE qrcodes SET scanned = TRUE WHERE id = ?", (qr_id,))
+                conn.commit()
+                conn.close()
+                return f"Code QR valide pour : {nom}. Première utilisation."
+            else:
+                conn.close()
+                return f"Ce code QR pour {nom} a déjà été scanné et ne peut plus être utilisé."
+        else:
+            conn.close()
+            return "Code QR non reconnu dans la base de données."
+    except json.JSONDecodeError:
+        return "QR code invalide : données non conformes"
+    except KeyError:
+        return "QR code invalide : informations manquantes"
+
+def process_qr_data(qr_data):
+    try:
+        qr_info = json.loads(qr_data)
+        qr_id = qr_info["id"]
+        nom = qr_info["name"]
+        
+        conn = sqlite3.connect('qrcodes.db')
+        c = conn.cursor()
+        c.execute("SELECT * FROM qrcodes WHERE id = ?", (qr_id,))
+        qr_db_data = c.fetchone()
+        
+        if qr_db_data:
+            if not qr_db_data[2]:  # Si pas encore scanné
+                c.execute("UPDATE qrcodes SET scanned = TRUE WHERE id = ?", (qr_id,))
+                conn.commit()
+                conn.close()
+                return f"Code QR valide pour : {nom}. Première utilisation. Le QR code a été marqué comme scanné."
+            else:
+                conn.close()
+                return f"Ce code QR pour {nom} a déjà été scanné et ne peut plus être utilisé."
+        else:
+            conn.close()
+            return "Code QR non reconnu dans la base de données."
+    except json.JSONDecodeError:
+        return "QR code invalide : données non conformes"
+    except KeyError:
+        return "QR code invalide : informations manquantes"
+
+@app.route('/view_db')
+
+
+def view_db():
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM qrcodes")
+    rows = c.fetchall()
+    conn.close()
+    
+    return render_template('view_db.html', rows=rows)
+
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
+
+def init_db():
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS qrcodes
+                 (id TEXT PRIMARY KEY, name TEXT, scanned BOOLEAN)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/generer_qr', methods=['POST'])
+def generer_qr():
+    nom = request.form['nom']
+    qr_id = str(uuid.uuid4())
+    
+    qr_data = json.dumps({"id": qr_id, "name": nom})
+    
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO qrcodes (id, name, scanned) VALUES (?, ?, ?)", (qr_id, nom, False))
+    conn.commit()
+    conn.close()
+    
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    img_io = BytesIO()
+    img.save(img_io, 'PNG')
+    img_io.seek(0)
+    return send_file(img_io, mimetype='image/png')
+
+@app.route('/scanner_qr', methods=['POST'])
+def scanner_qr():
+    if 'qr_image' not in request.files:
+        return "Aucune image n'a été téléchargée", 400
+    
+    qr_image = request.files['qr_image']
+    img = Image.open(qr_image)
+    resultat = decode(img)
+    
+    if resultat:
+        return process_qr_data(resultat[0].data.decode('utf-8'))
+    else:
+        return "Aucun code QR n'a été détecté dans l'image"
+
+@app.route('/scanner_qr_camera', methods=['POST'])
+def scanner_qr_camera():
+    data = request.json
+    return process_qr_data(data['qr_data'])
+
+def process_qr_data(qr_data):
+    try:
+        qr_info = json.loads(qr_data)
+        qr_id = qr_info["id"]
+        nom = qr_info["name"]
+        
+        conn = sqlite3.connect('qrcodes.db')
+        c = conn.cursor()
+        c.execute("SELECT * FROM qrcodes WHERE id = ?", (qr_id,))
+        qr_db_data = c.fetchone()
+        
+        if qr_db_data:
+            if not qr_db_data[2]:  # Si pas encore scanné
+                c.execute("UPDATE qrcodes SET scanned = TRUE WHERE id = ?", (qr_id,))
+                conn.commit()
+                conn.close()
+                return f"{nom} est marqué présent"
+            else:
+                conn.close()
+                return f"Ce code QR pour {nom} a déjà été scanné et ne peut plus être utilisé."
+        else:
+            conn.close()
+            return "Code QR non reconnu dans la base de données."
+    except json.JSONDecodeError:
+        return "QR code invalide : données non conformes"
+    except KeyError:
+        return "QR code invalide : informations manquantes"
+@app.route('/view_db')
+def view_db():
+    conn = sqlite3.connect('qrcodes.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM qrcodes")
+    rows = c.fetchall()
+    conn.close()
+    
+    return render_template('view_db.html', rows=rows)
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
