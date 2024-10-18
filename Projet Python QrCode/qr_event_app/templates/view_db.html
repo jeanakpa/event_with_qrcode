@@ -1,42 +1,73 @@
 <!DOCTYPE html>
-<html lang="fr" class="h-full bg-gray-100">
+<html lang="fr" class="h-full bg-gradient-to-r from-blue-100 to-indigo-100">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Contenu de la base de données</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+    </style>
 </head>
 <body class="h-full">
     <div class="min-h-full">
-        <header class="bg-indigo-600 pb-24">
-            <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-                <h1 class="text-3xl font-bold tracking-tight text-white" style="text-align: center;padding: 15px;">Base de données</h1>
+        <header class="bg-gradient-to-r from-indigo-600 to-blue-600 pb-8 sm:pb-12">
+            <div class="mx-auto max-w-4xl px-3 sm:px-4" style="margin-bottom: 130px;">
+                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white text-center py-4 sm:py-6 drop-shadow-lg">Base de données</h1>
+                <div class="flex flex-col sm:flex-row justify-center items-center space-y-2 sm:space-y-0 sm:space-x-3 text-white">
+                    <div class="w-full sm:w-auto flex flex-col items-center bg-white rounded-md p-2 sm:p-3 shadow transition-all duration-300 hover:shadow-md hover:bg-gray-100">
+                        <p class="text-sm sm:text-base font-semibold text-blue-600">Total</p>
+                        <p class="text-lg sm:text-xl font-bold mt-1 text-blue-600">{{ stats.get('total', 0) }}</p>
+                    </div>
+                    <div class="w-full sm:w-auto flex flex-col items-center bg-red-500 rounded-md p-2 sm:p-3 shadow transition-all duration-300 hover:shadow-md hover:bg-red-400">
+                        <p class="text-sm sm:text-base font-semibold">Non scannés</p>
+                        <p class="text-lg sm:text-xl font-bold mt-1">{{ stats.get('non_scanned', 0) }}</p>
+                    </div>
+                    <div class="w-full sm:w-auto flex flex-col items-center bg-green-500 rounded-md p-2 sm:p-3 shadow transition-all duration-300 hover:shadow-md hover:bg-green-400">
+                        <p class="text-sm sm:text-base font-semibold">Scannés</p>
+                        <p class="text-lg sm:text-xl font-bold mt-1">{{ stats.get('scanned', 0) }}</p>
+                    </div>
+                </div>
             </div>
         </header>
-
-        <main class="-mt-24 pb-8">
-            <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-                <div class="bg-white rounded-lg shadow overflow-hidden">
+        <main class="-mt-32 pb-8">
+            <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl">
                     <div class="px-4 py-5 sm:p-6">
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scanné</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">QR Code</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supprime</th>
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     {% for row in rows %}
-                                    <tr>
+                                    <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ row[0] }}</td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ row[1] }}</td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ 'bg-green-100 text-green-800' if row[2] else 'bg-red-100 text-red-800' }}">
+                                            <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {{ 'bg-green-100 text-green-800' if row[2] else 'bg-red-100 text-red-800' }}">
                                                 {{ 'Oui' if row[2] else 'Non' }}
                                             </span>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ row[0] }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <img src="{{ url_for('afficher_qr', qr_id=row[0]) }}" alt="QR code" class="w-18 h-18 object-cover rounded-lg shadow-sm">
+                                        </td>
+                                        <td class="text-center px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <button type="button" class="delete-btn" data-id="{{ row[0] }}">
+                                                <i class="fas fa-trash-alt text-red-500"></i>
+                                            </button>
+                                        </td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -44,13 +75,41 @@
                         </div>
                     </div>
                 </div>
-                <div class="mt-4 text-center">
-                    <a href="/" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <div class="mt-8 text-center">
+                    <a href="/" class="inline-flex items-center px-5 py-3 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-300">
                         Retour à l'accueil
                     </a>
                 </div>
             </div>
         </main>
     </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+        const deleteButtons = document.querySelectorAll('.delete-btn');
+
+        deleteButtons.forEach((button, index) => {
+            button.addEventListener('click', (event) => {
+                event.preventDefault(); // Empêche le comportement par défaut (clic sur le bouton)
+                const id = button.dataset.id; // Utilisez button.dataset.id au lieu de event.target.dataset.id
+                
+                if (confirm(`Voulez-vous vraiment supprimer cet enregistrement avec l'ID ${id} ?`)) {
+                    fetch(`/supprimer/${id}`, {
+                        method: 'DELETE'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            deleteButtons[index].parentElement.parentElement.remove(); // Supprime la ligne du tableau
+                            alert(data.message);
+                        } else {
+                            alert(data.message);
+                        }
+                    });
+                }
+            });
+        });
+    });
+    </script>
 </body>
 </html>
